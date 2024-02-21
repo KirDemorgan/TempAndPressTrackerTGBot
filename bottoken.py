@@ -1,1 +1,1 @@
-TOKEN = "7108062157:AAGNZ77VILZspzKvyCMT7xXt-vMcfO9jzsQ"
+TOKEN = "а еще че надо"
