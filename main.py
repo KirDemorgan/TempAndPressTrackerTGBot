@@ -9,9 +9,10 @@
 
 import sqlite3
 from datetime import datetime
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from bottoken import TOKEN
 from telegram import Update
-from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext
+from telegram.ext import Updater, CommandHandler, MessageHandler, Filters, CallbackContext, CallbackQueryHandler
 from sqlite3 import Error
 
 
@@ -95,8 +96,11 @@ def print_pressure(update: Update, context: CallbackContext) -> None:
     cur = conn_press.cursor()
     cur.execute("SELECT pressure, date_time FROM pressure WHERE user_id=?", (user_id,))
     rows = cur.fetchall()
-    for row in rows:
-        update.message.reply_text(f'Давление: {row[0]} Дата: {row[1]}')
+    if rows:
+        for row in rows:
+            update.message.reply_text(f'Давление: {row[0]} Дата: {row[1]}')
+    else:
+        update.message.reply_text('Нет записей о давлении для этого пользователя.')
     conn_press.close()
 
 
@@ -106,29 +110,58 @@ def print_temp(update: Update, context: CallbackContext) -> None:
     cur = conn_temp.cursor()
     cur.execute("SELECT temperature, date_time FROM temperatures WHERE user_id=?", (user_id,))
     rows = cur.fetchall()
-    for row in rows:
-        update.message.reply_text(f'Температура: {row[0]} Дата: {row[1]}')
+    if rows:
+        for row in rows:
+            update.message.reply_text(f'Температура: {row[0]} Дата: {row[1]}')
+    else:
+        update.message.reply_text('Нет записей о температуре для этого пользователя.')
     conn_temp.close()
 
 
+def ask_for_confirmation(update: Update, context: CallbackContext, delete_type: str) -> None:
+    keyboard = [
+        [
+            InlineKeyboardButton("Подтвердить", callback_data=f'confirm_{delete_type}'),
+            InlineKeyboardButton("Отменить", callback_data='cancel')
+        ]
+    ]
+
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    update.message.reply_text('Вы уверены, что хотите удалить?', reply_markup=reply_markup)
+
+def button(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    query.answer()
+
+    if query.data == 'confirm_pressure':
+        delete_pressure(update, context)
+        query.edit_message_text(text="Давление удалено")
+    elif query.data == 'confirm_temp':
+        delete_temp(update, context)
+        query.edit_message_text(text="Температура удалена")
+    else:
+        query.edit_message_text(text="Удаление отменено")
+
+
 def delete_pressure(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
+    user_id = update.callback_query.from_user.id
     conn_press = create_connection_pressure()
     cur = conn_press.cursor()
     cur.execute("DELETE FROM pressure WHERE user_id=?", (user_id,))
     conn_press.commit()
     conn_press.close()
-    update.message.reply_text(f'Давление удалено из базы данных')
+    update.callback_query.message.reply_text(f'Давление удалено из базы данных')
 
 
 def delete_temp(update: Update, context: CallbackContext) -> None:
-    user_id = update.message.from_user.id
+    user_id = update.callback_query.from_user.id
     conn_temp = create_connection_temperature()
     cur = conn_temp.cursor()
     cur.execute("DELETE FROM temperatures WHERE user_id=?", (user_id,))
     conn_temp.commit()
     conn_temp.close()
-    update.message.reply_text(f'Температура удалена из базы данных')
+    update.callback_query.message.reply_text(f'Температура удалена из базы данных')
 
 
 def main() -> None:
@@ -143,8 +176,16 @@ def main() -> None:
 
     print("Bot active")
 
+    dispatcher.add_handler(
+        CommandHandler("deletePressure", lambda update, context: ask_for_confirmation(update, context, 'pressure')))
+    dispatcher.add_handler(
+        CommandHandler("deleteTemp", lambda update, context: ask_for_confirmation(update, context, 'temp')))
+    dispatcher.add_handler(CallbackQueryHandler(button))
     dispatcher.add_handler(CommandHandler("start", start))
     dispatcher.add_handler(CommandHandler("addPressure", add_pressure))
+    dispatcher.add_handler(CommandHandler("addTemp", add_temp))
+    dispatcher.add_handler(CommandHandler("printPressure", print_pressure))
+    dispatcher.add_handler(CommandHandler("printTemp", print_temp))
 
     updater.start_polling()
 
